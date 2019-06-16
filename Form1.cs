@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Data.OleDb;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -17,16 +18,21 @@ namespace TranslatorWinForms
     public partial class Translator : Form
     {
         public string[] words;
-        public string answer;
+        public string answer="";
         public string result = "None";
         public string trueAnswer;
         public bool createdForm2 = false;
-        public int[] correctness;
+        //public int[] correctness;
         public int index;
         public bool clickedNewWord = false;
+        public static string connectString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=C:\\Users\\Oleh\\Desktop\\MyWordsMdb.mdb;";
+        //private OleDbConnection MyConnection;
         public Translator()
         {
             InitializeComponent();
+            Connector.str_connect = connectString;
+            //MyConnection = new OleDbConnection(connectString);
+            //MyConnection.Open();
             
         }
         void func(bool createdOrNot)
@@ -40,30 +46,43 @@ namespace TranslatorWinForms
             {
                 try
                 {
-                    if (string.Equals(trueAnswer, answer))
+                    using (OleDbConnection connection = new OleDbConnection(connectString))
                     {
-                        result = "Result: true!";
-                        label2.Text = result;
-                        correctness[index / 2] += 1;
-                        if (correctness[index / 2] >= 3)
+                        connection.Open();
+                        if (string.Equals(trueAnswer, answer))
                         {
-                            label2.Text = "Result: true!\nDelete this word?";
-                            deleteWord.Visible = true;
-                        }
+                            result = "Result: true!";
+                            label2.Text = result;
+                            string correctnessRequest = "UPDATE Words SET w_correct_repetitions=w_correct_repetitions+1 WHERE w_id=" + index.ToString();
+                            OleDbCommand correctnessCommand = new OleDbCommand(correctnessRequest, connection);
+                            correctnessCommand.ExecuteNonQuery();
+                            string getQuantity = "SELECT w_correct_repetitions FROM Words WHERE w_id=" + index.ToString();
+                            OleDbCommand getQuantityCommand = new OleDbCommand(getQuantity, connection);
+                            int correctness = Convert.ToInt32(getQuantityCommand.ExecuteScalar());
+                            if (correctness >= 3)
+                            {
+                                label2.Text = "Result: true!\nDelete this word?";
+                                deleteWord.Visible = true;
+                            }
 
+                        }
+                        else
+                        {
+                            result = "Result: false!\nRight answer: " + trueAnswer;
+                            label2.Text = result;
+                            string correctnessRequest = "UPDATE Words SET w_correct_repetitions=w_correct_repetitions-1 WHERE w_id=" + index.ToString();
+                            OleDbCommand correctnessCommand = new OleDbCommand(correctnessRequest, connection);
+                            correctnessCommand.ExecuteNonQuery();
+
+                        }
+                        connection.Close();
+                        clickedNewWord = false;
                     }
-                    else
-                    {
-                        result = "Result: false!\nRight answer: " + trueAnswer;
-                        label2.Text = result;
-                        correctness[index / 2] -= 1;
                         
-                    }
-                    clickedNewWord = false;
                 }
                 catch
                 {
-                    label2.Text = "Error!\nDownload the word!";
+                    label2.Text = "Error!\nWe are going to fix it!";
                 }
             }
             
@@ -75,22 +94,7 @@ namespace TranslatorWinForms
             answer = textBox1.Text.ToLower().Trim(' ');
         }
 
-        private void Button2_Click(object sender, EventArgs e)
-        {
-            StreamReader stream = new StreamReader("C:/Users/Oleh/Desktop/Words1.txt", System.Text.Encoding.UTF8);
-            string outText = stream.ReadToEnd();
-            words = outText.Split('-');
-            stream.Close();
-            for (int i=0;i<words.Length;i++)
-            {
-                words[i] = words[i].Trim(' ');
-            }
-            correctness = new int[words.Length/2];
-            for (int i=0;i<words.Length/2;i++)
-            {
-                correctness[i] = 0;
-            }
-        }
+        
 
         private void Button3_Click(object sender, EventArgs e)
         {
@@ -106,23 +110,47 @@ namespace TranslatorWinForms
 
         private void NewWord_Click(object sender, EventArgs e)
         {
-            Random rnd = new Random();
-
             try
             {
-                index = rnd.Next(0, words.Length / 2) * 2 + 1;
-                string question = words[index];
-                trueAnswer = words[index - 1];
-                string newText = "Translate (" + question + "): ";
-                label1.Text = newText;
-                label2.Text = "Result: ";
-                clickedNewWord = true;
-                deleteWord.Visible = false;
+                using (OleDbConnection connection = new OleDbConnection(connectString))
+                {
+                    connection.Open();
+                    string emptyOrNot = "SELECT w_id FROM Words WHERE EXIST (SELECT w_id FROM Words WHERE w_id=1)";
+                    OleDbCommand emptyCommand = new OleDbCommand(emptyOrNot, connection);
+                    bool NotEmpty = Convert.ToBoolean(emptyCommand.ExecuteScalar());
+                    if (NotEmpty)
+                    {
+                        Random rnd = new Random();
+                        string query = "SELECT MAX(w_id) FROM Words";
+                        OleDbCommand command = new OleDbCommand(query, connection);
+                        int amountOfWords = Convert.ToInt32(command.ExecuteScalar());
+                        index = rnd.Next(1, amountOfWords + 1);
+                        string questionRequest = "SELECT w_ukrainian FROM Words WHERE w_id=" + index.ToString();
+                        OleDbCommand requestCommand = new OleDbCommand(questionRequest, connection);
+                        string question = (requestCommand.ExecuteScalar()).ToString();
+                        //trueAnswer = words[index - 1];
+                        string newText = "Translate (" + question + "): ";
+                        label1.Text = newText;
+                        string answerRequest = "SELECT w_english FROM Words WHERE w_id=" + index.ToString();
+                        OleDbCommand answerCommand = new OleDbCommand(answerRequest, connection);
+                        trueAnswer = (answerCommand.ExecuteScalar()).ToString();
+                        label2.Text = "Result: ";
+                        clickedNewWord = true;
+                        deleteWord.Visible = false;
+                    }
+                    else
+                    {
+                        label1.Text = "Words are missing!";
+                        label2.Text = "You have studied all the words!\nAdd new ones!";
+                    }
+                    connection.Close();
+                }
+                
                 
             }
             catch
             {
-                label2.Text = "Error!\nYou must download the words!";
+                label2.Text = "Error!\nSorry!";
             }
             textBox1.Text = "";
 
@@ -131,44 +159,36 @@ namespace TranslatorWinForms
 
         private void DeleteWord_Click(object sender, EventArgs e)
         {
+
             try
             {
-                var temp = new List<string>(words);
-                temp.RemoveAt(index - 1);
-                temp.RemoveAt(index - 1);
-                words = temp.ToArray<string>();
-
-                var secondTemp = new List<int>(correctness);
-                secondTemp.RemoveAt(index / 2);
-                correctness = secondTemp.ToArray<int>();
-
-                deleteWord.Visible = false;
-                string writePath = "C:/Users/Oleh/Desktop/Words1.txt";
-                StreamWriter writeNewWords = new StreamWriter(writePath, false, System.Text.Encoding.UTF8);
-                for (int i=0;i<words.Length;i++)
+                using (OleDbConnection connection = new OleDbConnection(connectString))
                 {
-                    if (i!=words.Length-1)
+                    connection.Open();
+                    string deleteRequest = "DELETE FROM Words WHERE w_id=" + index.ToString();
+                    OleDbCommand deleteCommand = new OleDbCommand(deleteRequest, connection);
+                    deleteCommand.ExecuteNonQuery();
+                    string updateAfterDeleteRequest = "UPDATE Words SET w_id=w_id-1 WHERE w_id>" + index.ToString();
+                    OleDbCommand updateAfterDeleteCommand = new OleDbCommand(updateAfterDeleteRequest, connection);
+                    updateAfterDeleteCommand.ExecuteNonQuery();
+
+                    deleteWord.Visible = false;
+                    string emptyOrNot = "SELECT w_id FROM Words WHERE EXIST (SELECT w_id FROM Words WHERE w_id=1)";
+                    OleDbCommand command = new OleDbCommand(emptyOrNot, connection);
+                    bool empty = Convert.ToBoolean(command.ExecuteScalar());
+                    if (!empty)
                     {
-                        writeNewWords.Write(words[i] + "-");
+                        label1.Text = "Words are missing!";
+                        label2.Text = "You have studied all the words!\nAdd new ones!";
                     }
                     else
                     {
-                        writeNewWords.Write(words[i]);
+                        label1.Text = "Choose a new word!";
+                        label2.Text = "Result: deletion is successful!";
                     }
-                    
+                    textBox1.Text = "";
+                    connection.Close();
                 }
-                writeNewWords.Close();
-                if (correctness.Length==0 && words.Length==0)
-                {
-                    label1.Text = "Words are missing!";
-                    label2.Text = "You have successfully studied all the words!\nAdd new ones!";
-                }
-                else
-                {
-                    label1.Text = "Choose a new word!";
-                    label2.Text = "Result: deletion is successful!";
-                }
-                textBox1.Text = "";
 
             }
             catch
@@ -178,7 +198,10 @@ namespace TranslatorWinForms
             
         }
 
-        
+        private void Translator_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            //MyConnection.Close();
+        }
     }
 
     
