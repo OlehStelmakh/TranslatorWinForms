@@ -11,3 +11,4 @@ namespace TranslatorWinForms
         public static string str_connect { get; set; }
     }
 }
+
