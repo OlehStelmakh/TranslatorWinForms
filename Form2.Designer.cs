@@ -1,4 +1,4 @@
-﻿namespace TranslatorWinForms
+namespace TranslatorWinForms
 {
     partial class Form2
     {
